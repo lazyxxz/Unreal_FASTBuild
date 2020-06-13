@@ -20,7 +20,7 @@ namespace UnrealBuildTool
 		// Used to specify a non-standard location for the FBuild.exe, for example if you have not added it to your PATH environment variable.
 		public static string FBuildExePathOverride = "";
 
-		public bool bCleanBuild = true;
+		public bool bCleanBuild = false;
 
 		// Controls network build distribution
 		private bool bEnableDistribution = true;
@@ -802,6 +802,11 @@ namespace UnrealBuildTool
 				AddISPCCompileAction(Action, ActionIndex, DependencyIndices);
 				return;
 			}
+			else if (Action.CommandArguments.Contains("VisualStudioDTE\\dte80a.cpp"))
+			{
+				AddGenerateDte80aTLBAction(Action, ActionIndex, DependencyIndices);
+				return;
+			}
 
 			string[] SpecialCompilerOptions = { "/Fo", "/fo", "/Yc", "/Yu", "/Fp", "-o" };
 			var ParsedCompilerOptions = ParseCommandLineOptions(Action.CommandArguments, SpecialCompilerOptions);
@@ -1139,53 +1144,33 @@ namespace UnrealBuildTool
 			}
 		}
 
-		private void AddCopyAction(Action Action, int ActionIndex, List<int> DependencyIndices, List<Action> LocalExecutorActions)
+		private void AddGenerateDte80aTLBAction(Action Action, int ActionIndex, List<int> DependencyIndices)
 		{
-			if (Action.CommandArguments.Contains("copy"))
-			{
-				string[] tokens = Action.CommandArguments.Split(' ');
-				char[] flag2 = { ' ', '\\', '/', '\"', '@', '+', ',' };
-				string SourceFile = tokens[3].TrimStart(flag2).TrimEnd(flag2);
-				string DestFile = tokens[4].TrimStart(flag2).TrimEnd(flag2);
+			string[] SpecialCompilerOptions = { "/Fo", "/fo", "/Yc", "/Yu", "/Fp", "-o" };
+			var ParsedCompilerOptions = ParseCommandLineOptions(Action.CommandArguments, SpecialCompilerOptions);
 
-				if (SourceFile != DestFile)
-				{
-					var action = string.Format("'Action_{0}'", ActionIndex);
-					ActionList.Add(action);
-					AddText(string.Format("Exec({0})\n{{\n", action));
-					AddText(string.Format("\t.ExecExecutable = '{0}'\n", Action.CommandPath));
-					AddText(string.Format("\t.ExecInput = '{0}'\n", SourceFile));
-					AddText(string.Format("\t.ExecOutput = '{0}'\n", DestFile));
-					AddText(string.Format("\t.ExecArguments = ' {0} '\n", Action.CommandArguments));
-					AddText("}\n");
-				}
-				else
-				{
-					var action = string.Format("'Action_{0}'", ActionIndex);
-					ActionList.Add(action);
-					AddText(string.Format("Exec({0})\n{{\n", action));
-					AddText(string.Format("\t.ExecExecutable = '{0}'\n", Action.CommandPath));
-					AddText(string.Format("\t.ExecOutput = '{0}'\n", DestFile));
-					AddText(string.Format("\t.ExecArguments = ' /C echo {0} 1>nul'\n", DestFile));
-					AddText("}\n");
-				}
-			}
-			else
+			string InputFile = GetOptionValue(ParsedCompilerOptions, "InputFile", Action, ProblemIfNotFound: true);
+			if (string.IsNullOrEmpty(InputFile))
 			{
-				LocalExecutorActions.Add(Action);
+				Console.WriteLine("We have no InputFile. Bailing.");
+				return;
 			}
-		}
 
-		private void AddBuildAction(Action Action, int ActionIndex, List<int> DependencyIndices, List<Action> LocalExecutorActions)
-		{
-			if (Action.CommandPath.FullName.Contains("copy.exe") || Action.CommandArguments.Contains("copy"))
+			string TargetFile = InputFile.Replace("dte80a.cpp", "dte80a.tlh");
+
+			var action = string.Format("'Action_{0}'", ActionIndex);
+			ActionList.Add(action);
+			AddText(string.Format("Exec({0})\n{{\n", action));
+			AddText(string.Format("\t.ExecExecutable = '{0}'\n", Action.CommandPath));
+			AddText(string.Format("\t.ExecInput = '{0}'\n", InputFile));
+			AddText(string.Format("\t.ExecOutput = '{0}'\n", TargetFile));
+			AddText(string.Format("\t.ExecArguments = ' {0} '\n", Action.CommandArguments));
+			if (Action.PrerequisiteActions.Count() > 0)
 			{
-				AddCopyAction(Action, ActionIndex, DependencyIndices, LocalExecutorActions);
+				List<string> DependencyNames = DependencyIndices.ConvertAll(x => string.Format("\t\t'Action_{0}', ", x));
+				AddText(string.Format("\t.PreBuildDependencies = {{\n{0}\n\t}} \n", string.Join("\n", DependencyNames.ToArray())));
 			}
-			else
-			{
-				LocalExecutorActions.Add(Action);
-			}
+			AddText("}\n");
 		}
 
 		private FileStream bffOutputFileStream = null;
@@ -1231,9 +1216,8 @@ namespace UnrealBuildTool
 					{
 						case ActionType.Compile: AddCompileAction(Action, ActionIndex, DependencyIndices); break;
 						case ActionType.Link: AddLinkAction(Actions, ActionIndex, DependencyIndices); break;
-						case ActionType.BuildProject: AddBuildAction(Action, ActionIndex, DependencyIndices, LocalExecutorActions); break;
 						case ActionType.WriteMetadata: LocalExecutorActions.Add(Action); break;
-						//case ActionType.BuildProject: LocalExecutorActions.Add(Action); break;
+						case ActionType.BuildProject: LocalExecutorActions.Add(Action); break;
 						default: Console.WriteLine("Fastbuild is ignoring an unsupported action: " + Action.ActionType.ToString()); break;
 					}
 				}
