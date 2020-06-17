@@ -389,6 +389,66 @@ namespace UnrealBuildTool
 			return ParsedCompilerOptions;
 		}
 
+		//private void AddPrerequisiteActions(List<Action> Actions, List<Action> InActions, HashSet<int> UsedActions, Action Action)
+		//{
+		//	int ActionIndex = InActions.IndexOf(Action);
+		//	if (UsedActions.Contains(ActionIndex))
+		//	{
+		//		return;
+		//	}
+
+		//	foreach (Action PrerequisiteAction in Action.PrerequisiteActions)
+		//	{
+		//		int DepIndex = InActions.IndexOf(PrerequisiteAction);
+		//		if (UsedActions.Contains(DepIndex))
+		//		{
+		//			continue;
+		//		}
+		//		AddPrerequisiteActions(Actions, InActions, UsedActions, PrerequisiteAction);
+		//	}
+
+		//	Actions.Add(Action);
+		//	UsedActions.Add(ActionIndex);			
+		//}
+
+		private void AddPrerequisiteActions(List<Action> Actions, List<Action> InActions, HashSet<int> UsedActions, Action Action)
+		{
+			int ActionIndex = InActions.IndexOf(Action);
+			if (UsedActions.Contains(ActionIndex))
+			{
+				return;
+			}
+
+			HashSet<int> PushedActions = new HashSet<int>();
+			Stack<Action> ActionStack = new Stack<Action>();
+			ActionStack.Push(Action);
+
+			while (ActionStack.Count() > 0)
+			{
+				Action TopAction = ActionStack.Peek();
+
+				int TopActionIndex = InActions.IndexOf(TopAction);
+				if (UsedActions.Contains(TopActionIndex))
+				{
+					ActionStack.Pop();
+				}
+				else if (TopAction.PrerequisiteActions.Count() == 0 || PushedActions.Contains(TopActionIndex))
+				{
+					Actions.Add(TopAction);
+					UsedActions.Add(TopActionIndex);
+					ActionStack.Pop();
+				}
+				else
+				{
+					PushedActions.Add(TopActionIndex);
+					foreach (Action PrerequisiteAction in TopAction.PrerequisiteActions.Reverse())
+					{
+						ActionStack.Push(PrerequisiteAction);
+					}
+				}
+			}	
+		}
+
 		private List<Action> SortActions(List<Action> InActions)
 		{
 			List<Action> Actions = InActions;
@@ -397,18 +457,12 @@ namespace UnrealBuildTool
 			for (int ActionIndex = 0; ActionIndex < InActions.Count; ActionIndex++)
 			{
 				Action Action = InActions[ActionIndex];
-				foreach (FileItem Item in Action.PrerequisiteItems)
+				foreach (Action PrerequisiteAction in Action.PrerequisiteActions)
 				{
-					foreach (Action ProducingAction in InActions)
+					int DepIndex = InActions.IndexOf(PrerequisiteAction);
+					if (DepIndex > ActionIndex)
 					{
-						if (ProducingAction != Action && ProducingAction.ProducedItems.Contains(Item))
-						{
-							int DepIndex = InActions.IndexOf(ProducingAction);
-							if (DepIndex > ActionIndex)
-							{
-								NumSortErrors++;
-							}
-						}
+						NumSortErrors++;
 					}
 				}
 			}
@@ -418,49 +472,39 @@ namespace UnrealBuildTool
 				var UsedActions = new HashSet<int>();
 				for (int ActionIndex = 0; ActionIndex < InActions.Count; ActionIndex++)
 				{
-					if (UsedActions.Contains(ActionIndex))
-					{
-						continue;
-					}
-					Action Action = InActions[ActionIndex];
-					foreach (FileItem Item in Action.PrerequisiteItems)
-					{
-						foreach (Action ProducingAction in InActions)
-						{
-							if (ProducingAction != Action && ProducingAction.ProducedItems.Contains(Item))
-							{
-								int DepIndex = InActions.IndexOf(Action);
-								if (UsedActions.Contains(DepIndex))
-								{
-									continue;
-								}
-								Actions.Add(Action);
-								UsedActions.Add(DepIndex);
-							}
-						}
-					}
-					Actions.Add(Action);
-					UsedActions.Add(ActionIndex);
+					AddPrerequisiteActions(Actions, InActions, UsedActions, InActions[ActionIndex]);
+
+					//if (UsedActions.Contains(ActionIndex))
+					//{
+					//	continue;
+					//}
+					//Action Action = InActions[ActionIndex];
+					//foreach (Action PrerequisiteAction in Action.PrerequisiteActions)
+					//{
+					//	int DepIndex = InActions.IndexOf(PrerequisiteAction);
+					//	if (UsedActions.Contains(DepIndex))
+					//	{
+					//		continue;
+					//	}
+					//	Actions.Add(PrerequisiteAction);
+					//	UsedActions.Add(DepIndex);
+					//}
+					//Actions.Add(Action);
+					//UsedActions.Add(ActionIndex);
 				}
 				for (int ActionIndex = 0; ActionIndex < Actions.Count; ActionIndex++)
 				{
 					Action Action = Actions[ActionIndex];
-					foreach (FileItem Item in Action.PrerequisiteItems)
+					foreach (Action PrerequisiteAction in Action.PrerequisiteActions)
 					{
-						foreach (Action ProducingAction in Actions)
+						int DepIndex = Actions.IndexOf(PrerequisiteAction);
+						if (DepIndex > ActionIndex)
 						{
-							if (ProducingAction != Action && ProducingAction.ProducedItems.Contains(Item))
-							{
-								int DepIndex = Actions.IndexOf(ProducingAction);
-								if (DepIndex > ActionIndex)
-								{
-									Console.WriteLine("Action is not topologically sorted.");
-									Console.WriteLine("  {0} {1}", Action.CommandPath, Action.CommandArguments);
-									Console.WriteLine("Dependency");
-									Console.WriteLine("  {0} {1}", ProducingAction.CommandPath, ProducingAction.CommandArguments);
-									throw new BuildException("Cyclical Dependency in action graph.");
-								}
-							}
+							Console.WriteLine("Action is not topologically sorted.");
+							Console.WriteLine("  {0} {1}", Action.CommandPath, Action.CommandArguments);
+							Console.WriteLine("Dependency");
+							Console.WriteLine("  {0} {1}", PrerequisiteAction.CommandPath, PrerequisiteAction.CommandArguments);
+							throw new BuildException("Cyclical Dependency in action graph.");
 						}
 					}
 				}
@@ -776,18 +820,52 @@ namespace UnrealBuildTool
 					return;
 				}
 			}
-			var action = string.Format("'Action_{0}'", ActionIndex);
-			ActionList.Add(action);
-			AddText(string.Format("Exec({0})\n{{\n", action));
-			AddText("\t.ExecExecutable = '$ISPC$'\n");
-			AddText(string.Format("\t.ExecInput = '{0}'\n", InputFile));
-			AddText(string.Format("\t.ExecOutput = '{0}'\n", OutputObjectFileName));
-			AddText(string.Format("\t.ExecArguments = '{0} {1} {2}  {3}'\n"
-				, InputFile, OutFlag, OutputObjectFileName, OtherCompilerOptions));
-			//AddText(string.Format("\t.ExecArguments = '{2} {3} {1}  {0}'\n"
-			//	, OtherCompilerOptions, OutputObjectFileName, InputFile, OutFlag));
-			AddText("}\n");
 
+			if (OutputObjectFileName.Contains(".ispc.generated.dummy.h"))
+			{
+				var ISPCAction0 = string.Format("\"Action_{0}_ISPCGen\"", ActionIndex);
+				var ISPCAction = string.Format("'Action_{0}_ISPCGen'", ActionIndex);
+				ActionList.Add(ISPCAction);
+				AddText(string.Format("Exec({0})\n{{\n", ISPCAction));
+				AddText("\t.ExecExecutable = '$ISPC$'\n");
+				AddText(string.Format("\t.ExecInput = '{0}'\n", InputFile));
+				AddText(string.Format("\t.ExecOutput = '{0}'\n", OutputObjectFileName));
+				AddText(string.Format("\t.ExecArguments = '{0} {1} {2}  {3}'\n"
+					, InputFile, OutFlag, OutputObjectFileName, OtherCompilerOptions));
+				//AddText(string.Format("\t.ExecArguments = '{2} {3} {1}  {0}'\n"
+				//	, OtherCompilerOptions, OutputObjectFileName, InputFile, OutFlag));
+				AddText("}\n");
+
+				var ISPCOutputObjectFileName = OutputObjectFileName.Replace(".ispc.generated.dummy.h", ".ispc.generated.h");
+				var CopyAction = string.Format("'Action_{0}'", ActionIndex);
+				ActionList.Add(CopyAction);
+				AddText(string.Format("Copy({0})\n{{\n", CopyAction));
+				AddText(string.Format("\t.Source = '{0}'\n", OutputObjectFileName));
+				AddText(string.Format("\t.Dest = '{0}'\n", ISPCOutputObjectFileName));
+				AddText(string.Format("\t.PreBuildDependencies = {{ {0} }}\n", ISPCAction0));
+				AddText("}\n");
+			}
+			else
+			{
+				var ISPCAction0 = string.Format("\"Action_{0}\"", ActionIndex);
+				var ISPCAction = string.Format("'Action_{0}'", ActionIndex);
+				ActionList.Add(ISPCAction);
+				AddText(string.Format("Exec({0})\n{{\n", ISPCAction));
+				AddText("\t.ExecExecutable = '$ISPC$'\n");
+				AddText(string.Format("\t.ExecInput = '{0}'\n", InputFile));
+				AddText(string.Format("\t.ExecOutput = '{0}'\n", OutputObjectFileName));
+				AddText(string.Format("\t.ExecArguments = '{0} {1} {2}  {3}'\n"
+					, InputFile, OutFlag, OutputObjectFileName, OtherCompilerOptions));
+				if (DependencyIndices.Count > 0)
+				{
+					List<string> DependencyNames = DependencyIndices.ConvertAll(x => string.Format("'Action_{0}'", x));
+					AddText(string.Format("\t.PreBuildDependencies = {{ {0} }}\n", string.Join(",", DependencyNames.ToArray())));
+				}
+				//AddText(string.Format("\t.ExecArguments = '{2} {3} {1}  {0}'\n"
+				//	, OtherCompilerOptions, OutputObjectFileName, InputFile, OutFlag));
+				AddText("}\n");
+
+			}
 		}
 
 		private void AddCompileAction(Action Action, int ActionIndex, List<int> DependencyIndices)
@@ -796,6 +874,8 @@ namespace UnrealBuildTool
 			if (Action.CommandPath.FullName.Contains("rc.exe"))
 			{
 				CompilerName = "UE4ResourceCompiler";
+				AddResourceCompileAction(Action, ActionIndex, DependencyIndices);
+				return;
 			}
 			else if (Action.CommandPath.FullName.Contains("ispc.exe"))
 			{
@@ -807,6 +887,148 @@ namespace UnrealBuildTool
 				AddGenerateDte80aTLBAction(Action, ActionIndex, DependencyIndices);
 				return;
 			}
+
+			string[] SpecialCompilerOptions = { "/Fo", "/fo", "/Yc", "/Yu", "/Fp", "-o" };
+			var ParsedCompilerOptions = ParseCommandLineOptions(Action.CommandArguments, SpecialCompilerOptions);
+
+			string OutputObjectFileName = GetOptionValue(ParsedCompilerOptions, IsMSVC() ? "/Fo" : "-o", Action, ProblemIfNotFound: !IsMSVC());
+
+			if (IsMSVC() && string.IsNullOrEmpty(OutputObjectFileName)) // Didn't find /Fo, try /fo
+			{
+				OutputObjectFileName = GetOptionValue(ParsedCompilerOptions, "/fo", Action, ProblemIfNotFound: true);
+			}
+
+			if (string.IsNullOrEmpty(OutputObjectFileName)) //No /Fo or /fo, we're probably in trouble.
+			{
+				Console.WriteLine("We have no OutputObjectFileName. Bailing.");
+				return;
+			}
+
+			string IntermediatePath = Path.GetDirectoryName(OutputObjectFileName);
+			if (string.IsNullOrEmpty(IntermediatePath))
+			{
+				Console.WriteLine("We have no IntermediatePath. Bailing.");
+				Console.WriteLine("Our Action.CommandArguments were: " + Action.CommandArguments);
+				return;
+			}
+
+			string InputFile = GetOptionValue(ParsedCompilerOptions, "InputFile", Action, ProblemIfNotFound: true);
+			if (string.IsNullOrEmpty(InputFile))
+			{
+				Console.WriteLine("We have no InputFile. Bailing.");
+				return;
+			}
+			var InputFileExtName = Path.GetExtension(InputFile);
+
+			string OtherCompilerOptions = GetOptionValue(ParsedCompilerOptions, "OtherOptions", Action);
+			OtherCompilerOptions = OtherCompilerOptions.Replace("we4668", "wd4668");
+			OtherCompilerOptions = OtherCompilerOptions.Replace("we4459", "wd4459");
+
+			string PreprocessOtherCompilerOptions = OtherCompilerOptions.Replace("/c", "/P");
+
+			var DependencyFileName = Path.GetDirectoryName(OutputObjectFileName) + "\\" + Path.GetFileNameWithoutExtension(OutputObjectFileName) + ".txt";
+			var DependencyAction = string.Format("'Action_{0}_depend'", ActionIndex);
+			DependencyActionList.Add(DependencyAction);
+			AddText(string.Format("Exec({0})\n{{\n", DependencyAction));
+			AddText(string.Format("\t.ExecExecutable = '{0}' \n", Action.CommandPath));
+			AddText(string.Format("\t.ExecInput = \"{0}\"\n", InputFile));
+			AddText(string.Format("\t.ExecOutput = \"{0}\"\n", DependencyFileName));
+			AddText(string.Format("\t.ExecArguments ='-dependencies=\"{0}\" -compiler=\"{1}\" -- \"{1}\" \"%1\" {2} /showIncludes'\n", DependencyFileName, VCEnv.CompilerPath, PreprocessOtherCompilerOptions));
+			if (DependencyIndices.Count > 0)
+			{
+				List<string> DependencyNames = DependencyIndices.ConvertAll(x => string.Format("'Action_{0}'", x));
+				AddText(string.Format("\t.PreBuildDependencies = {{ {0} }}\n", string.Join(", ", DependencyNames.ToArray())));
+			}
+			AddText("}\n");
+
+			var action = string.Format("'Action_{0}'", ActionIndex);
+			ActionList.Add(action);
+			AddText(string.Format("ObjectList({0})\n{{\n", action));
+			AddText(string.Format("\t.Compiler = '{0}' \n", CompilerName));
+			AddText(string.Format("\t.CompilerInputFiles = \"{0}\"\n", InputFile));
+			AddText(string.Format("\t.CompilerOutputPath = \"{0}\"\n", IntermediatePath));
+
+
+			bool bSkipDistribution = false;
+			foreach (var it in ForceLocalCompileModules)
+			{
+				if (Path.GetFullPath(InputFile).Contains(it))
+				{
+					bSkipDistribution = true;
+					break;
+				}
+			}
+
+
+			if (!Action.bCanExecuteRemotely || !Action.bCanExecuteRemotelyWithSNDBS || bSkipDistribution)
+			{
+				AddText(string.Format("\t.AllowDistribution = false\n"));
+			}
+
+			string CompilerOutputExtension = ".unset";
+
+			string InputFileExt = ".cpp";
+			if (InputFileExtName.ToLower() == ".cc")
+			{
+				InputFileExt = ".cc";
+			}
+			else if (InputFileExtName.ToLower() == ".c")
+			{
+				InputFileExt = ".c";
+			}
+			else
+			{
+				InputFileExt = ".cpp";
+			}
+
+			if (ParsedCompilerOptions.ContainsKey("/Yc")) //Create PCH
+			{
+				string PCHIncludeHeader = GetOptionValue(ParsedCompilerOptions, "/Yc", Action, ProblemIfNotFound: true);
+				string PCHOutputFile = GetOptionValue(ParsedCompilerOptions, "/Fp", Action, ProblemIfNotFound: true);
+
+				AddText(string.Format("\t.CompilerOptions = '\"%1\" /Fo\"%2\" /Fp\"{0}\" /Yu\"{1}\" {2} '\n", PCHOutputFile, PCHIncludeHeader, OtherCompilerOptions));
+
+				AddText(string.Format("\t.PCHOptions = '\"%1\" /Fp\"%2\" /Yc\"{0}\" {1} /Fo\"{2}\"'\n", PCHIncludeHeader, OtherCompilerOptions, OutputObjectFileName));
+				AddText(string.Format("\t.PCHInputFile = \"{0}\"\n", InputFile));
+				AddText(string.Format("\t.PCHOutputFile = \"{0}\"\n", PCHOutputFile));
+				CompilerOutputExtension = ".obj";
+			}
+			else if (ParsedCompilerOptions.ContainsKey("/Yu")) //Use PCH
+			{
+				string PCHIncludeHeader = GetOptionValue(ParsedCompilerOptions, "/Yu", Action, ProblemIfNotFound: true);
+				string PCHOutputFile = GetOptionValue(ParsedCompilerOptions, "/Fp", Action, ProblemIfNotFound: true);
+				string PCHToForceInclude = PCHOutputFile.Replace(".pch", "");
+				AddText(string.Format("\t.CompilerOptions = '\"%1\" /Fo\"%2\" /Fp\"{0}\" /Yu\"{1}\" /FI\"{2}\" {3} '\n", PCHOutputFile, PCHIncludeHeader, PCHToForceInclude, OtherCompilerOptions));
+				CompilerOutputExtension = InputFileExt + ".obj";
+			}
+			else
+			{
+				if (IsMSVC())
+				{
+					AddText(string.Format("\t.CompilerOptions = '{0} /Fo\"%2\" \"%1\" '\n", OtherCompilerOptions));
+					CompilerOutputExtension = InputFileExt + ".obj";
+				}
+				else
+				{
+					AddText(string.Format("\t.CompilerOptions = '{0} -o \"%2\" \"%1\" '\n", OtherCompilerOptions));
+					CompilerOutputExtension = InputFileExt + ".o";
+				}
+			}
+
+			AddText(string.Format("\t.CompilerOutputExtension = '{0}' \n", CompilerOutputExtension));
+
+			if (DependencyIndices.Count > 0)
+			{
+				List<string> DependencyNames = DependencyIndices.ConvertAll(x => string.Format("'Action_{0}'", x));
+				AddText(string.Format("\t.PreBuildDependencies = {{ {0} }}\n", string.Join(",", DependencyNames.ToArray())));
+			}
+
+			AddText(string.Format("}}\n\n"));
+		}
+
+		private void AddResourceCompileAction(Action Action, int ActionIndex, List<int> DependencyIndices)
+		{
+			string CompilerName = "UE4ResourceCompiler";
 
 			string[] SpecialCompilerOptions = { "/Fo", "/fo", "/Yc", "/Yu", "/Fp", "-o" };
 			var ParsedCompilerOptions = ParseCommandLineOptions(Action.CommandArguments, SpecialCompilerOptions);
@@ -869,61 +1091,8 @@ namespace UnrealBuildTool
 			OtherCompilerOptions = OtherCompilerOptions.Replace("we4459", "wd4459");
 			string CompilerOutputExtension = ".unset";
 
-			string InputFileExt = ".cpp";
-			if (InputFileExtName.ToLower() == ".cc")
-			{
-				InputFileExt = ".cc";
-			}
-			else if (InputFileExtName.ToLower() == ".c")
-			{
-				InputFileExt = ".c";
-			}
-			else
-			{
-				InputFileExt = ".cpp";
-			}
-
-			if (ParsedCompilerOptions.ContainsKey("/Yc")) //Create PCH
-			{
-				string PCHIncludeHeader = GetOptionValue(ParsedCompilerOptions, "/Yc", Action, ProblemIfNotFound: true);
-				string PCHOutputFile = GetOptionValue(ParsedCompilerOptions, "/Fp", Action, ProblemIfNotFound: true);
-
-				AddText(string.Format("\t.CompilerOptions = '\"%1\" /Fo\"%2\" /Fp\"{0}\" /Yu\"{1}\" {2} '\n", PCHOutputFile, PCHIncludeHeader, OtherCompilerOptions));
-
-				AddText(string.Format("\t.PCHOptions = '\"%1\" /Fp\"%2\" /Yc\"{0}\" {1} /Fo\"{2}\"'\n", PCHIncludeHeader, OtherCompilerOptions, OutputObjectFileName));
-				AddText(string.Format("\t.PCHInputFile = \"{0}\"\n", InputFile));
-				AddText(string.Format("\t.PCHOutputFile = \"{0}\"\n", PCHOutputFile));
-				CompilerOutputExtension = ".obj";
-			}
-			else if (ParsedCompilerOptions.ContainsKey("/Yu")) //Use PCH
-			{
-				string PCHIncludeHeader = GetOptionValue(ParsedCompilerOptions, "/Yu", Action, ProblemIfNotFound: true);
-				string PCHOutputFile = GetOptionValue(ParsedCompilerOptions, "/Fp", Action, ProblemIfNotFound: true);
-				string PCHToForceInclude = PCHOutputFile.Replace(".pch", "");
-				AddText(string.Format("\t.CompilerOptions = '\"%1\" /Fo\"%2\" /Fp\"{0}\" /Yu\"{1}\" /FI\"{2}\" {3} '\n", PCHOutputFile, PCHIncludeHeader, PCHToForceInclude, OtherCompilerOptions));
-				CompilerOutputExtension = InputFileExt + ".obj";
-			}
-			else
-			{
-				if (CompilerName == "UE4ResourceCompiler")
-				{
-					AddText(string.Format("\t.CompilerOptions = '{0} /fo\"%2\" \"%1\" '\n", OtherCompilerOptions));
-					CompilerOutputExtension = Path.GetExtension(InputFile) + ".res";
-				}
-				else
-				{
-					if (IsMSVC())
-					{
-						AddText(string.Format("\t.CompilerOptions = '{0} /Fo\"%2\" \"%1\" '\n", OtherCompilerOptions));
-						CompilerOutputExtension = InputFileExt + ".obj";
-					}
-					else
-					{
-						AddText(string.Format("\t.CompilerOptions = '{0} -o \"%2\" \"%1\" '\n", OtherCompilerOptions));
-						CompilerOutputExtension = InputFileExt + ".o";
-					}
-				}
-			}
+			AddText(string.Format("\t.CompilerOptions = '{0} /fo\"%2\" \"%1\" '\n", OtherCompilerOptions));
+			CompilerOutputExtension = Path.GetExtension(InputFile) + ".res";
 
 			AddText(string.Format("\t.CompilerOutputExtension = '{0}' \n", CompilerOutputExtension));
 
@@ -1175,12 +1344,50 @@ namespace UnrealBuildTool
 
 		private FileStream bffOutputFileStream = null;
 		private List<String> ActionList;
+		private List<String> DependencyActionList;
 
+		private List<Action> FixDependency(List<Action> InActions)
+		{
+			// PCH action has dependency on ISPC actions, when module has ISPC actions
+			var ISPCActions = InActions.Where(Action => Action.CommandPath.FullName.Contains("ispc.exe"));
+			var PCHActions = InActions.Where(Action => Action.CommandArguments.Contains(".h.pch.response"));
+			foreach (Action Action in InActions)
+			{
+				var PCHActionList = Action.PrerequisiteActions.Intersect(PCHActions);
+				if (PCHActionList.Count() > 0)
+				{
+					var ISPCActionList = Action.PrerequisiteActions.Intersect(ISPCActions);
+					if (ISPCActionList.Count() > 0)
+					{
+						foreach (Action PCHAction in PCHActionList)
+						{
+							foreach (Action ISPCAction in ISPCActionList)
+							{
+								PCHAction.PrerequisiteActions.Add(ISPCAction);
+							}
+						}
+					}
+				}
+			}
+
+			var VisualStudioCodeSourceCodeAccessActions = InActions.Where(Action => Action.CommandArguments.Contains("Module.VisualStudioCodeSourceCodeAccess.cpp.obj.response"));
+			var DTE80Actions = InActions.Where(Action => Action.CommandArguments.Contains("VisualStudioDTE\\dte80a.cpp"));
+			foreach (Action Action in VisualStudioCodeSourceCodeAccessActions)
+			{
+				foreach (Action DTE80Action in DTE80Actions)
+				{
+					Action.PrerequisiteActions.Add(DTE80Action);
+				}
+			}
+			return InActions;
+		}
 		private bool CreateBffFile(List<Action> InActions, string BffFilePath, List<Action> LocalExecutorActions)
 		{
-			List<Action> Actions = SortActions(InActions);
+
+			List<Action> Actions = SortActions(FixDependency(InActions));
 
 			ActionList = new List<String>();
+			DependencyActionList = new List<String>();
 
 			try
 			{
@@ -1194,20 +1401,12 @@ namespace UnrealBuildTool
 
 					// Resolve dependencies
 					List<int> DependencyIndices = new List<int>();
-					foreach (FileItem Item in Action.PrerequisiteItems)
+					foreach (Action PrerequisiteAction in Action.PrerequisiteActions)
 					{
-						foreach (Action ProducingAction in Actions)
+						int ProducingActionIndex = Actions.IndexOf(PrerequisiteAction);
+						if (ProducingActionIndex >= 0)
 						{
-							if (Action != ProducingAction 
-								&& ProducingAction.ProducedItems != null 
-								&& ProducingAction.ProducedItems.Contains(Item))
-							{
-								int ProducingActionIndex = Actions.IndexOf(ProducingAction);
-								if (ProducingActionIndex >= 0)
-								{
-									DependencyIndices.Add(ProducingActionIndex);
-								}
-							}
+							DependencyIndices.Add(ProducingActionIndex);
 						}
 					}
 
@@ -1222,19 +1421,17 @@ namespace UnrealBuildTool
 					}
 				}
 
-				AddText("Alias( 'all' ) \n{\n");
-				AddText("\t.Targets = { \n");
-				if (ActionList.Count() > 0)
+				if (ActionList.Count() > 0 || DependencyActionList.Count() > 0)
 				{
-					AddText(string.Format("\t\t{0}", ActionList[0]));
-					for (int ActionIndex = 1; ActionIndex < ActionList.Count(); ActionIndex++)
-					{
-						AddText(string.Format("{0}\t\t{1}", ",\n", ActionList[ActionIndex]));
-					}
-				}
-				AddText("\n\t}\n");
-				AddText("}\n");
+					ActionList.InsertRange(0, DependencyActionList);
 
+					AddText("Alias( 'all' ) \n{\n");
+					AddText("\t.Targets = { \n");
+					List<string> DependencyNames = ActionList.ConvertAll(x => string.Format("\t\t{0}", x));
+					AddText(string.Format("\n{0}\n\t\n", string.Join(", \n", DependencyNames.ToArray())));
+					AddText("\n\t}\n");
+					AddText("}\n");
+				}
 				bffOutputFileStream.Close();
 			}
 			catch (Exception e)
