@@ -823,26 +823,33 @@ namespace UnrealBuildTool
 
 			if (OutputObjectFileName.Contains(".ispc.generated.dummy.h"))
 			{
-				var ISPCAction0 = string.Format("\"Action_{0}_ISPCGen\"", ActionIndex);
-				var ISPCAction = string.Format("'Action_{0}_ISPCGen'", ActionIndex);
-				ActionList.Add(ISPCAction);
+				var ISPCOutputObjectFileName = OutputObjectFileName.Replace(".ispc.generated.dummy.h", ".ispc.generated.h");
+
+				var ISPCAction = string.Format("'Action_{0}'", ActionIndex);
+				//ActionList.Add(ISPCAction);
+				DependencyActionList.Add(ISPCAction);
 				AddText(string.Format("Exec({0})\n{{\n", ISPCAction));
 				AddText("\t.ExecExecutable = '$ISPC$'\n");
 				AddText(string.Format("\t.ExecInput = '{0}'\n", InputFile));
-				AddText(string.Format("\t.ExecOutput = '{0}'\n", OutputObjectFileName));
+				AddText(string.Format("\t.ExecOutput = '{0}'\n", ISPCOutputObjectFileName));
 				AddText(string.Format("\t.ExecArguments = '{0} {1} {2}  {3}'\n"
-					, InputFile, OutFlag, OutputObjectFileName, OtherCompilerOptions));
+					, InputFile, OutFlag, ISPCOutputObjectFileName, OtherCompilerOptions));
+				if (DependencyIndices.Count > 0)
+				{
+					List<string> DependencyNames = DependencyIndices.ConvertAll(x => string.Format("'Action_{0}'", x));
+					AddText(string.Format("\t.PreBuildDependencies = {{ {0} }}\n", string.Join(",", DependencyNames.ToArray())));
+				}
 				//AddText(string.Format("\t.ExecArguments = '{2} {3} {1}  {0}'\n"
 				//	, OtherCompilerOptions, OutputObjectFileName, InputFile, OutFlag));
 				AddText("}\n");
 
-				var ISPCOutputObjectFileName = OutputObjectFileName.Replace(".ispc.generated.dummy.h", ".ispc.generated.h");
-				var CopyAction = string.Format("'Action_{0}'", ActionIndex);
-				ActionList.Add(CopyAction);
+				var CopyAction = string.Format("'Action_{0}_dummy_h'", ActionIndex);
+				//ActionList.Add(CopyAction);
+				DependencyActionList.Add(CopyAction);
 				AddText(string.Format("Copy({0})\n{{\n", CopyAction));
-				AddText(string.Format("\t.Source = '{0}'\n", OutputObjectFileName));
-				AddText(string.Format("\t.Dest = '{0}'\n", ISPCOutputObjectFileName));
-				AddText(string.Format("\t.PreBuildDependencies = {{ {0} }}\n", ISPCAction0));
+				AddText(string.Format("\t.Source = '{0}'\n", ISPCOutputObjectFileName));
+				AddText(string.Format("\t.Dest = '{0}'\n", OutputObjectFileName));
+				AddText(string.Format("\t.PreBuildDependencies = {{ {0} }}\n", ISPCAction));
 				AddText("}\n");
 			}
 			else
@@ -868,8 +875,9 @@ namespace UnrealBuildTool
 			}
 		}
 
-		private void AddCompileAction(Action Action, int ActionIndex, List<int> DependencyIndices)
+		private void AddCompileAction(List<Action> InActions, int ActionIndex, List<int> DependencyIndices)
 		{
+			Action Action = InActions[ActionIndex];
 			string CompilerName = GetCompilerName();
 			if (Action.CommandPath.FullName.Contains("rc.exe"))
 			{
@@ -924,22 +932,30 @@ namespace UnrealBuildTool
 			OtherCompilerOptions = OtherCompilerOptions.Replace("we4668", "wd4668");
 			OtherCompilerOptions = OtherCompilerOptions.Replace("we4459", "wd4459");
 
-			string PreprocessOtherCompilerOptions = OtherCompilerOptions.Replace("/c", "/P");
-
-			var DependencyFileName = Path.GetDirectoryName(OutputObjectFileName) + "\\" + Path.GetFileNameWithoutExtension(OutputObjectFileName) + ".txt";
-			var DependencyAction = string.Format("'Action_{0}_depend'", ActionIndex);
-			DependencyActionList.Add(DependencyAction);
-			AddText(string.Format("Exec({0})\n{{\n", DependencyAction));
-			AddText(string.Format("\t.ExecExecutable = '{0}' \n", Action.CommandPath));
-			AddText(string.Format("\t.ExecInput = \"{0}\"\n", InputFile));
-			AddText(string.Format("\t.ExecOutput = \"{0}\"\n", DependencyFileName));
-			AddText(string.Format("\t.ExecArguments ='-dependencies=\"{0}\" -compiler=\"{1}\" -- \"{1}\" \"%1\" {2} /showIncludes'\n", DependencyFileName, VCEnv.CompilerPath, PreprocessOtherCompilerOptions));
-			if (DependencyIndices.Count > 0)
-			{
-				List<string> DependencyNames = DependencyIndices.ConvertAll(x => string.Format("'Action_{0}'", x));
-				AddText(string.Format("\t.PreBuildDependencies = {{ {0} }}\n", string.Join(", ", DependencyNames.ToArray())));
-			}
-			AddText("}\n");
+			//string PreprocessOtherCompilerOptions = OtherCompilerOptions.Replace("/c", "/EP");
+			//var DependencyFileName = Path.GetDirectoryName(OutputObjectFileName) + "\\" + Path.GetFileNameWithoutExtension(OutputObjectFileName) + ".txt";
+			//var PreprocessedFileName = Path.GetDirectoryName(OutputObjectFileName) + "\\" + Path.GetFileNameWithoutExtension(OutputObjectFileName) + ".i";
+			//var DependencyAction = string.Format("'Action_{0}_depend'", ActionIndex);
+			//DependencyActionList.Add(DependencyAction);
+			//AddText(string.Format("Exec({0})\n{{\n", DependencyAction));
+			//AddText(string.Format("\t.ExecExecutable = '{0}' \n", Action.CommandPath));
+			//AddText(string.Format("\t.ExecInput = \"{0}\"\n", InputFile));
+			//AddText(string.Format("\t.ExecOutput = \"{0}\"\n", DependencyFileName));
+			//AddText(string.Format("\t.ExecArguments ='-dependencies=\"{0}\" -compiler=\"{1}\" -- \"{1}\" \"%1\" {2} /showIncludes '\n", DependencyFileName, VCEnv.CompilerPath, PreprocessOtherCompilerOptions));
+			//if (DependencyIndices.Count > 0)
+			//{
+			//	List<Action> DependencyActions = DependencyIndices.ConvertAll(x => InActions[x]);
+			//	List<Action> ISPCActions = DependencyActions.FindAll(x => x.CommandArguments.Contains(".ispc.generated.h"));
+			//	List<Action> ISPCDependencyActions = new List<Action>();
+			//	ISPCActions.ForEach(x => ISPCDependencyActions.AddRange(x.PrerequisiteActions));
+			//	if (ISPCDependencyActions.Count() > 0)
+			//	{
+			//		var ISPCDependencyIndices = ISPCDependencyActions.ConvertAll(x => InActions.IndexOf(x));
+			//		List<string> DependencyNames = ISPCDependencyIndices.ConvertAll(x => string.Format("'Action_{0}'", x));
+			//		AddText(string.Format("\t.PreBuildDependencies = {{ {0} }}\n", string.Join(", ", DependencyNames.ToArray())));
+			//	}
+			//}
+			//AddText("}\n");
 
 			var action = string.Format("'Action_{0}'", ActionIndex);
 			ActionList.Add(action);
@@ -1017,11 +1033,13 @@ namespace UnrealBuildTool
 
 			AddText(string.Format("\t.CompilerOutputExtension = '{0}' \n", CompilerOutputExtension));
 
+			List<string> DependencyNameList = new List<string>();
+			//DependencyNameList.Add(DependencyAction);
 			if (DependencyIndices.Count > 0)
 			{
-				List<string> DependencyNames = DependencyIndices.ConvertAll(x => string.Format("'Action_{0}'", x));
-				AddText(string.Format("\t.PreBuildDependencies = {{ {0} }}\n", string.Join(",", DependencyNames.ToArray())));
+				DependencyNameList.AddRange(DependencyIndices.ConvertAll(x => string.Format("'Action_{0}'", x)));
 			}
+			AddText(string.Format("\t.PreBuildDependencies = {{ {0} }}\n", string.Join(",", DependencyNameList.ToArray())));
 
 			AddText(string.Format("}}\n\n"));
 		}
@@ -1261,8 +1279,8 @@ namespace UnrealBuildTool
 					AddText(string.Format("Copy('Action_{0}_dummy')\n{{ \n", ActionIndex));
 					AddText(string.Format("\t.Source = '{0}' \n", dummyText));
 					AddText(string.Format("\t.Dest = '{0}' \n", dummyText + ".dummy"));
-					List<string> DependencyNames = DependencyIndices.ConvertAll(x => string.Format("\t\t'Action_{0}', ;{1}", x, Actions[x].StatusDescription));
-					AddText(string.Format("\t.PreBuildDependencies = {{\n{0}\n\t}} \n", string.Join("\n", DependencyNames.ToArray())));
+					//List<string> DependencyNames = DependencyIndices.ConvertAll(x => string.Format("\t\t'Action_{0}', ;{1}", x, Actions[x].StatusDescription));
+					//AddText(string.Format("\t.PreBuildDependencies = {{\n{0}\n\t}} \n", string.Join("\n", DependencyNames.ToArray())));
 					AddText(string.Format("}}\n\n"));
 				}
 
@@ -1308,8 +1326,64 @@ namespace UnrealBuildTool
 						AddText(string.Format("\t.LinkerOptions = '{0} -o \"%2\" @\"%1\"' \n", OtherCompilerOptions)); // The MQ is a huge bodge to consume the %1.
 				}
 
+				{
+					List<string> DependencyNames = DependencyIndices.ConvertAll(x => string.Format("\t\t'Action_{0}', ;{1}", x, Actions[x].StatusDescription));
+					DependencyNames.Insert(0, String.Format("\t\t'Action_{0}_dummy', ", ActionIndex));
+					AddText(string.Format("\t.PreBuildDependencies = {{\n{0}\n\t}} \n", string.Join("\n", DependencyNames.ToArray())));
+				}
+
 				AddText(string.Format("\t.LinkerOutput = '{0}' \n", OutputFile));
 				AddText(string.Format("}}\n\n"));
+			}
+		}
+
+		private void AddCopyAction(Action Action, int ActionIndex, List<int> DependencyIndices, List<Action> LocalExecutorActions)
+		{
+			bool isContainDTE80a_tlh = Action.CommandArguments.Contains("VisualStudioDTE\\dte80a.tlh");
+			bool isContainISPC_tlh = Action.CommandArguments.Contains(".ispc.generated.h");
+
+			if (Action.CommandArguments.Contains("copy") && !isContainDTE80a_tlh && !isContainISPC_tlh)
+			{
+				string[] tokens = Action.CommandArguments.Split(' ');
+				char[] flag2 = { ' ', '\\', '/', '\"', '@', '+', ',' };
+				string SourceFile = tokens[3].TrimStart(flag2).TrimEnd(flag2);
+				string DestFile = tokens[4].TrimStart(flag2).TrimEnd(flag2);
+
+				//if (SourceFile != DestFile)
+				//{
+				//	var action = string.Format("'Action_{0}'", ActionIndex);
+				//	ActionList.Add(action);
+				//	AddText(string.Format("Exec({0})\n{{\n", action));
+				//	AddText(string.Format("\t.ExecExecutable = '{0}'\n", Action.CommandPath));
+				//	AddText(string.Format("\t.ExecInput = '{0}'\n", SourceFile));
+				//	AddText(string.Format("\t.ExecOutput = '{0}'\n", DestFile));
+				//	AddText(string.Format("\t.ExecArguments = ' {0} '\n", Action.CommandArguments));
+				//	if (DependencyIndices.Count > 0)
+				//	{
+				//		List<string> DependencyNames = DependencyIndices.ConvertAll(x => string.Format("'Action_{0}'", x));
+				//		AddText(string.Format("\t.PreBuildDependencies = {{ {0} }}\n", string.Join(", ", DependencyNames.ToArray())));
+				//	}
+				//	AddText("}\n");
+				//}
+				//else
+				{
+					var action = string.Format("'Action_{0}'", ActionIndex);
+					ActionList.Add(action);
+					AddText(string.Format("Exec({0})\n{{\n", action));
+					AddText(string.Format("\t.ExecExecutable = '{0}'\n", Action.CommandPath));
+					AddText(string.Format("\t.ExecOutput = '{0}'\n", DestFile));
+					AddText(string.Format("\t.ExecArguments = ' {0} '\n", Action.CommandArguments));
+					if (DependencyIndices.Count > 0)
+					{
+						List<string> DependencyNames = DependencyIndices.ConvertAll(x => string.Format("'Action_{0}'", x));
+						AddText(string.Format("\t.PreBuildDependencies = {{ {0} }}\n", string.Join(", ", DependencyNames.ToArray())));
+					}
+					AddText("}\n");
+				}
+			}
+			else
+			{
+				LocalExecutorActions.Add(Action);
 			}
 		}
 
@@ -1370,14 +1444,11 @@ namespace UnrealBuildTool
 				}
 			}
 
-			var VisualStudioCodeSourceCodeAccessActions = InActions.Where(Action => Action.CommandArguments.Contains("Module.VisualStudioCodeSourceCodeAccess.cpp.obj.response"));
-			var DTE80Actions = InActions.Where(Action => Action.CommandArguments.Contains("VisualStudioDTE\\dte80a.cpp"));
+			var DTE80Action = InActions.Find(Action => Action.CommandArguments.Contains("dte80a.cpp"));
+			var VisualStudioCodeSourceCodeAccessActions = InActions.FindAll(Action => Action.CommandArguments.Contains("Module.VisualStudioCodeSourceCodeAccess.cpp.obj.response"));
 			foreach (Action Action in VisualStudioCodeSourceCodeAccessActions)
 			{
-				foreach (Action DTE80Action in DTE80Actions)
-				{
-					Action.PrerequisiteActions.Add(DTE80Action);
-				}
+				Action.PrerequisiteActions.Add(DTE80Action);
 			}
 			return InActions;
 		}
@@ -1413,10 +1484,10 @@ namespace UnrealBuildTool
 					AddText(string.Format("// \"{0}\" {1}\n", Action.CommandPath, Action.CommandArguments));
 					switch (Action.ActionType)
 					{
-						case ActionType.Compile: AddCompileAction(Action, ActionIndex, DependencyIndices); break;
+						case ActionType.Compile: AddCompileAction(Actions, ActionIndex, DependencyIndices); break;
 						case ActionType.Link: AddLinkAction(Actions, ActionIndex, DependencyIndices); break;
 						case ActionType.WriteMetadata: LocalExecutorActions.Add(Action); break;
-						case ActionType.BuildProject: LocalExecutorActions.Add(Action); break;
+						case ActionType.BuildProject: AddCopyAction(Action, ActionIndex, DependencyIndices, LocalExecutorActions); break;
 						default: Console.WriteLine("Fastbuild is ignoring an unsupported action: " + Action.ActionType.ToString()); break;
 					}
 				}
@@ -1470,7 +1541,7 @@ namespace UnrealBuildTool
 			// Yassine: The -clean is to bypass the FastBuild internal dependencies checks (cached in the fdb) as it could create some conflicts with UBT.
 			//			Basically we want FB to stupidly compile what UBT tells it to.
 			//string FBCommandLine = string.Format("-monitor -summary {0} {1} -ide -clean -config {2}", distArgument, cacheArgument, BffFilePath);
-			string FBCommandLine = string.Format("-monitor -summary {0} {1} -ide {2} -config {3}", distArgument, cacheArgument, cleanArgument, BffFilePath);
+			string FBCommandLine = string.Format("-monitor -summary {0} {1} -progress -ide {2} -config {3}", distArgument, cacheArgument, cleanArgument, BffFilePath);
 
 			ProcessStartInfo FBStartInfo = new ProcessStartInfo(string.IsNullOrEmpty(FBuildExePathOverride) ? "fbuild" : FBuildExePathOverride, FBCommandLine);
 
