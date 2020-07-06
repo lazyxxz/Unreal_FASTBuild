@@ -428,7 +428,7 @@ namespace UnrealBuildTool
 				Action TopAction = ActionStack.Peek();
 
 				int TopActionIndex = InActions.IndexOf(TopAction);
-				if (UsedActions.Contains(TopActionIndex))
+				if (UsedActions.Contains(TopActionIndex) || TopAction == null)
 				{
 					ActionStack.Pop();
 				}
@@ -443,7 +443,10 @@ namespace UnrealBuildTool
 					PushedActions.Add(TopActionIndex);
 					foreach (Action PrerequisiteAction in TopAction.PrerequisiteActions.Reverse())
 					{
-						ActionStack.Push(PrerequisiteAction);
+						if (PrerequisiteAction != null)
+						{
+							ActionStack.Push(PrerequisiteAction);
+						}
 					}
 				}
 			}	
@@ -1034,10 +1037,51 @@ namespace UnrealBuildTool
 			AddText(string.Format("\t.CompilerOutputExtension = '{0}' \n", CompilerOutputExtension));
 
 			List<string> DependencyNameList = new List<string>();
-			//DependencyNameList.Add(DependencyAction);
-			if (DependencyIndices.Count > 0)
+			foreach (var LibAction in Action.PrerequisiteActions)
 			{
-				DependencyNameList.AddRange(DependencyIndices.ConvertAll(x => string.Format("'Action_{0}'", x)));
+				if (LibAction == null)
+				{
+					continue;
+				}
+				if (LibAction.CommandPath.FullName.Contains("cl-filter.exe"))
+				{
+					var LibActionIndex = InActions.IndexOf(LibAction);
+					string ActionName = string.Format("'Action_{0}'", LibActionIndex);
+					DependencyNameList.Add(ActionName);
+				}
+				else if (LibAction.CommandDescription == "Copy" && LibAction.StatusDescription.Contains("ispc.generated.h"))
+				{
+					foreach (var ISPCAction in LibAction.PrerequisiteActions)
+					{
+						var ISPCActionIndex = InActions.IndexOf(ISPCAction);
+						string ActionName = string.Format("'Action_{0}'", ISPCActionIndex);
+						DependencyNameList.Add(ActionName);
+					}
+				}
+				else if (LibAction.StatusDescription.Contains("dte80a.tlh"))
+				{
+					foreach (var DTEAction in LibAction.PrerequisiteActions)
+					{
+						var DTEActionIndex = InActions.IndexOf(DTEAction);
+						string ActionName = string.Format("'Action_{0}'", DTEActionIndex);
+						DependencyNameList.Add(ActionName);
+					}
+				}
+
+				//if (DependencyIndices.Count > 0)
+				//{
+				//	List<Action> DependencyActions = DependencyIndices.ConvertAll(x => InActions[x]);
+				//	List<Action> ISPCActions = DependencyActions.FindAll(x => x.CommandArguments.Contains(".ispc.generated.h"));
+				//	List<Action> ISPCDependencyActions = new List<Action>();
+				//	ISPCActions.ForEach(x => ISPCDependencyActions.AddRange(x.PrerequisiteActions));
+				//	if (ISPCDependencyActions.Count() > 0)
+				//	{
+				//		var ISPCDependencyIndices = ISPCDependencyActions.ConvertAll(x => InActions.IndexOf(x));
+				//		List<string> DependencyNames = ISPCDependencyIndices.ConvertAll(x => string.Format("'Action_{0}'", x));
+				//		AddText(string.Format("\t.PreBuildDependencies = {{ {0} }}\n", string.Join(", ", DependencyNames.ToArray())));
+				//	}
+				//}
+
 			}
 			AddText(string.Format("\t.PreBuildDependencies = {{ {0} }}\n", string.Join(",", DependencyNameList.ToArray())));
 
