@@ -719,6 +719,7 @@ namespace UnrealBuildTool
 						"$Root$/mspdbsrv.exe",
 						"$Root$/mspft140.dll",
 						"$Root$/msvcp140.dll",
+						"$Root$/msvcp140_atomic_wait.dll",
 						"$Root$/tbbmalloc.dll", // Required as of 16.2 (14.22.27905)
 						"$Root$/vcruntime140.dll",
 						"$Root$/vcruntime140_1.dll", // Required as of 16.5.1 (14.25.28610)
